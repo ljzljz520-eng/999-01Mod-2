@@ -1,4 +1,780 @@
 
+import { Html5Qrcode } from 'html5-qrcode';
+
+// ==================== 网络状态监控器 ====================
+class NetworkMonitor {
+    constructor() {
+        this.isOnline = navigator.onLine;
+        this.listeners = [];
+        this.statusEl = document.getElementById('networkStatus');
+        this.statusDotEl = document.getElementById('networkStatusDot');
+        this.statusTextEl = document.getElementById('networkStatusText');
+
+        this.init();
+    }
+
+    init() {
+        window.addEventListener('online', () => this.handleOnline());
+        window.addEventListener('offline', () => this.handleOffline());
+        this.updateUI();
+    }
+
+    onStatusChange(callback) {
+        this.listeners.push(callback);
+    }
+
+    handleOnline() {
+        this.isOnline = true;
+        this.updateUI();
+        this.listeners.forEach(cb => cb(true));
+    }
+
+    handleOffline() {
+        this.isOnline = false;
+        this.updateUI();
+        this.listeners.forEach(cb => cb(false));
+    }
+
+    updateUI() {
+        if (!this.statusEl) return;
+
+        if (this.isOnline) {
+            this.statusEl.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-50 border border-green-200 transition-all duration-300';
+            this.statusDotEl.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+            this.statusTextEl.textContent = '在线';
+            this.statusTextEl.className = 'text-xs font-bold text-green-700';
+        } else {
+            this.statusEl.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 border border-red-200 transition-all duration-300';
+            this.statusDotEl.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
+            this.statusTextEl.textContent = '离线';
+            this.statusTextEl.className = 'text-xs font-bold text-red-700';
+        }
+    }
+}
+
+// ==================== IndexedDB 离线缓存管理器 ====================
+class OfflineCacheManager {
+    constructor() {
+        this.dbName = 'FAQueryOfflineDB';
+        this.storeName = 'offline_records';
+        this.dbVersion = 1;
+        this.db = null;
+
+        this.listEl = document.getElementById('offlineList');
+        this.emptyEl = document.getElementById('emptyOffline');
+        this.badgeEl = document.getElementById('offlineBadge');
+        this.countBadgeEl = document.getElementById('offlineCountBadge');
+        this.batchSubmitBtn = document.getElementById('batchSubmitBtn');
+        this.clearBtn = document.getElementById('clearOfflineBtn');
+
+        this.currentPhoto = null;
+        this.currentLocation = null;
+        this.html5QrCode = null;
+    }
+
+    async init() {
+        await this.initDB();
+        this.bindEvents();
+        this.render();
+    }
+
+    initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve();
+            };
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
+                    store.createIndex('collectedAt', 'collectedAt', { unique: false });
+                    store.createIndex('status', 'status', { unique: false });
+                }
+            };
+        });
+    }
+
+    bindEvents() {
+        if (this.clearBtn) {
+            this.clearBtn.addEventListener('click', () => {
+                uiManager.confirm('确定要清空所有离线采集记录吗？不可恢复。', () => {
+                    this.clearAll();
+                }, '清空离线记录');
+            });
+        }
+
+        if (this.batchSubmitBtn) {
+            this.batchSubmitBtn.addEventListener('click', () => this.batchSubmit());
+        }
+    }
+
+    generateId() {
+        return 'offline_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    async addRecord(record) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+
+            const fullRecord = {
+                id: this.generateId(),
+                facode: record.facode,
+                photo: record.photo || null,
+                location: record.location || null,
+                remark: record.remark || '',
+                collectedAt: Date.now(),
+                status: 'pending',
+                submittedAt: null,
+                queryResult: null,
+                errorMessage: null
+            };
+
+            const request = store.add(fullRecord);
+            request.onsuccess = () => {
+                this.render();
+                resolve(fullRecord);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async updateRecord(id, updates) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const getRequest = store.get(id);
+
+            getRequest.onsuccess = () => {
+                const record = getRequest.result;
+                if (!record) {
+                    reject(new Error('Record not found'));
+                    return;
+                }
+                const updatedRecord = { ...record, ...updates };
+                const putRequest = store.put(updatedRecord);
+                putRequest.onsuccess = () => {
+                    this.render();
+                    resolve(updatedRecord);
+                };
+                putRequest.onerror = () => reject(putRequest.error);
+            };
+            getRequest.onerror = () => reject(getRequest.error);
+        });
+    }
+
+    async deleteRecord(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.delete(id);
+            request.onsuccess = () => {
+                this.render();
+                resolve();
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async getAllRecords() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const records = request.result.sort((a, b) => b.collectedAt - a.collectedAt);
+                resolve(records);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async getPendingRecords() {
+        const records = await this.getAllRecords();
+        return records.filter(r => r.status === 'pending' || r.status === 'failed');
+    }
+
+    async clearAll() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.clear();
+            request.onsuccess = () => {
+                this.render();
+                resolve();
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    formatTime(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+    }
+
+    getStatusLabel(status) {
+        const labels = {
+            pending: { text: '待提交', class: 'bg-orange-100 text-orange-700' },
+            submitting: { text: '提交中', class: 'bg-blue-100 text-blue-700' },
+            success: { text: '已提交', class: 'bg-green-100 text-green-700' },
+            failed: { text: '提交失败', class: 'bg-red-100 text-red-700' }
+        };
+        return labels[status] || { text: status, class: 'bg-gray-100 text-gray-700' };
+    }
+
+    async render() {
+        if (!this.listEl || !this.emptyEl) return;
+
+        const records = await this.getAllRecords();
+        const pendingCount = records.filter(r => r.status === 'pending' || r.status === 'failed').length;
+
+        if (this.badgeEl) {
+            if (pendingCount > 0) {
+                this.badgeEl.textContent = pendingCount;
+                this.badgeEl.classList.remove('hidden');
+            } else {
+                this.badgeEl.classList.add('hidden');
+            }
+        }
+
+        if (this.countBadgeEl) {
+            this.countBadgeEl.textContent = `${pendingCount} 条待提交`;
+        }
+
+        if (this.batchSubmitBtn) {
+            this.batchSubmitBtn.disabled = pendingCount === 0 || !networkMonitor.isOnline;
+        }
+
+        if (records.length === 0) {
+            this.listEl.innerHTML = '';
+            this.emptyEl.classList.remove('hidden');
+            return;
+        }
+
+        this.emptyEl.classList.add('hidden');
+
+        this.listEl.innerHTML = records.map(record => {
+            const statusInfo = this.getStatusLabel(record.status);
+            const hasPhoto = !!record.photo;
+            const hasLocation = !!record.location;
+
+            return `
+                <div class="offline-item bg-white border border-gray-100 rounded-lg p-4 hover:shadow-md transition-all duration-200 group"
+                     data-id="${record.id}">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-bold text-gray-800 text-lg">${record.facode}</span>
+                                <span class="px-2 py-0.5 ${statusInfo.class} text-xs font-bold rounded-full uppercase tracking-wide">
+                                    ${statusInfo.text}
+                                </span>
+                                <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+                                    离线采集
+                                </span>
+                            </div>
+                            <div class="flex items-center text-xs text-gray-400 gap-2 mb-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span class="font-medium text-amber-600">采集时间: ${this.formatTime(record.collectedAt)}</span>
+                            </div>
+                            ${record.submittedAt ? `
+                            <div class="flex items-center text-xs text-gray-400 gap-2">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <span>提交时间: ${this.formatTime(record.submittedAt)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex items-center gap-1">
+                            ${record.status === 'success' && record.queryResult ? `
+                            <button onclick="window.offlineCacheManager.showResult('${record.id}')" 
+                                class="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition" title="查看结果">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            </button>
+                            ` : ''}
+                            ${(record.status === 'pending' || record.status === 'failed') ? `
+                            <button onclick="window.offlineCacheManager.submitSingle('${record.id}')" 
+                                class="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-md transition" title="单独提交">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                            </button>
+                            ` : ''}
+                            <button onclick="window.offlineCacheManager.deleteRecord('${record.id}')" 
+                                class="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition opacity-0 group-hover:opacity-100" title="删除">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${record.queryResult ? `
+                    <div class="mb-3 p-3 bg-green-50 border border-green-100 rounded-lg">
+                        <div class="text-xs text-gray-500 uppercase font-semibold mb-1">查询结果</div>
+                        <div class="text-xl font-bold text-green-600 font-mono">SN: ${record.queryResult.sn || '未找到'}</div>
+                    </div>
+                    ` : ''}
+
+                    ${record.errorMessage ? `
+                    <div class="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg">
+                        <div class="text-xs text-gray-500 uppercase font-semibold mb-1">错误信息</div>
+                        <div class="text-sm text-red-600">${record.errorMessage}</div>
+                    </div>
+                    ` : ''}
+
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        ${hasPhoto ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            含照片
+                        </span>
+                        ` : ''}
+                        ${hasLocation ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            ${record.location.address || '位置已记录'}
+                        </span>
+                        ` : ''}
+                        ${record.remark ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 text-gray-700 rounded max-w-full truncate">
+                            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                            </svg>
+                            <span class="truncate">${record.remark}</span>
+                        </span>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async showResult(id) {
+        const records = await this.getAllRecords();
+        const record = records.find(r => r.id === id);
+        if (record && record.queryResult) {
+            if (record.queryResult.sn) {
+                uiManager.alert(`固定资产编码: ${record.facode}\n序列号: ${record.queryResult.sn}`, '查询结果');
+            } else {
+                uiManager.alert(`固定资产编码: ${record.facode}\n未找到对应的序列号`, '查询结果');
+            }
+        }
+    }
+
+    async submitSingle(id) {
+        if (!networkMonitor.isOnline) {
+            uiManager.alert('当前网络不可用，请恢复网络后再试', '无法提交');
+            return;
+        }
+
+        const records = await this.getAllRecords();
+        const record = records.find(r => r.id === id);
+        if (!record) return;
+
+        await this.submitOneRecord(record);
+    }
+
+    getBaseUrl(ip) {
+        if (ip.includes(':')) {
+            return `http://${ip}`;
+        }
+        return `http://${ip}:8080`;
+    }
+
+    async submitOneRecord(record) {
+        const ip = document.getElementById('ipInput')?.value.trim() || 'localhost';
+
+        try {
+            await this.updateRecord(record.id, { status: 'submitting' });
+
+            const headers = connectionManager.getHeaders();
+            const baseUrl = this.getBaseUrl(ip);
+            const url = `${baseUrl}/api/query.php?facode=${encodeURIComponent(record.facode)}`;
+
+            const response = await fetch(url, { method: 'GET', headers: headers });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const rawError = errorData.error || `HTTP 错误！状态码: ${response.status}`;
+                throw new Error(connectionManager.translateError ? connectionManager.translateError(rawError) : rawError);
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                await this.updateRecord(record.id, {
+                    status: 'success',
+                    submittedAt: Date.now(),
+                    queryResult: data.data,
+                    errorMessage: null
+                });
+
+                if (data.data) {
+                    historyManager.add({ facode: record.facode, ip, sn: data.data.sn });
+                }
+
+                return true;
+            } else {
+                throw new Error(data.error || '查询失败');
+            }
+        } catch (error) {
+            let errorMsg = error.message;
+            if (error.message.includes('Failed to fetch')) {
+                errorMsg = '无法连接到服务器，请检查 IP 和后端状态';
+            }
+
+            await this.updateRecord(record.id, {
+                status: 'failed',
+                submittedAt: Date.now(),
+                errorMessage: errorMsg
+            });
+
+            return false;
+        }
+    }
+
+    async batchSubmit() {
+        if (!networkMonitor.isOnline) {
+            uiManager.alert('当前网络不可用，请恢复网络后再试', '无法提交');
+            return;
+        }
+
+        const pendingRecords = await this.getPendingRecords();
+        if (pendingRecords.length === 0) {
+            uiManager.alert('没有待提交的记录', '提示');
+            return;
+        }
+
+        uiManager.confirm(`确定要提交 ${pendingRecords.length} 条离线采集记录吗？`, async () => {
+            this.batchSubmitBtn.disabled = true;
+            this.batchSubmitBtn.innerHTML = `
+                <svg class="w-4 h-4 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                提交中...
+            `;
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const record of pendingRecords) {
+                const success = await this.submitOneRecord(record);
+                if (success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            }
+
+            this.render();
+            this.batchSubmitBtn.innerHTML = `
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                批量提交
+            `;
+
+            uiManager.alert(`批量提交完成\n成功: ${successCount} 条\n失败: ${failCount} 条`, '提交完成');
+        }, '批量提交');
+    }
+}
+
+// ==================== 离线扫码采集管理器 ====================
+class OfflineScanManager {
+    constructor(offlineCacheManager) {
+        this.cacheManager = offlineCacheManager;
+
+        this.modal = document.getElementById('offlineScanModal');
+        this.openBtn = document.getElementById('offlineScanBtn');
+        this.closeBtn = document.getElementById('closeOfflineScan');
+        this.cancelBtn = document.getElementById('cancelOfflineBtn');
+        this.saveBtn = document.getElementById('saveOfflineBtn');
+
+        this.facodeInput = document.getElementById('offlineFacode');
+        this.remarkInput = document.getElementById('offlineRemark');
+        this.collectTimeEl = document.getElementById('offlineCollectTime');
+
+        this.startScannerBtn = document.getElementById('startScannerBtn');
+        this.stopScannerBtn = document.getElementById('stopScannerBtn');
+        this.scannerContainer = document.getElementById('scannerContainer');
+        this.scannerEl = document.getElementById('scanner');
+
+        this.photoInput = document.getElementById('photoInput');
+        this.photoPreview = document.getElementById('photoPreview');
+        this.photoPreviewContainer = document.getElementById('photoPreviewContainer');
+        this.photoPlaceholder = document.getElementById('photoPlaceholder');
+        this.removePhotoBtn = document.getElementById('removePhotoBtn');
+
+        this.getLocationBtn = document.getElementById('getLocationBtn');
+        this.locationText = document.getElementById('locationText');
+
+        this.html5QrCode = null;
+        this.currentPhoto = null;
+        this.currentLocation = null;
+
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        if (this.openBtn) {
+            this.openBtn.addEventListener('click', () => this.openModal());
+        }
+        if (this.closeBtn) {
+            this.closeBtn.addEventListener('click', () => this.closeModal());
+        }
+        if (this.cancelBtn) {
+            this.cancelBtn.addEventListener('click', () => this.closeModal());
+        }
+        if (this.saveBtn) {
+            this.saveBtn.addEventListener('click', () => this.saveRecord());
+        }
+
+        if (this.startScannerBtn) {
+            this.startScannerBtn.addEventListener('click', () => this.startScanner());
+        }
+        if (this.stopScannerBtn) {
+            this.stopScannerBtn.addEventListener('click', () => this.stopScanner());
+        }
+
+        if (this.photoInput) {
+            this.photoInput.addEventListener('change', (e) => this.handlePhotoSelect(e));
+        }
+        if (this.removePhotoBtn) {
+            this.removePhotoBtn.addEventListener('click', () => this.removePhoto());
+        }
+
+        if (this.getLocationBtn) {
+            this.getLocationBtn.addEventListener('click', () => this.getCurrentLocation());
+        }
+    }
+
+    openModal() {
+        if (!networkMonitor.isOnline) {
+            uiManager.alert('当前处于离线模式，您采集的数据将保存到本地缓存，网络恢复后可批量提交。', '离线模式提示');
+        }
+
+        this.resetForm();
+        this.updateCollectTime();
+        this.modal.classList.remove('hidden');
+        uiManager.showOverlay();
+    }
+
+    closeModal() {
+        this.stopScanner();
+        this.modal.classList.add('hidden');
+        uiManager.hideOverlay();
+    }
+
+    resetForm() {
+        this.facodeInput.value = '';
+        this.remarkInput.value = '';
+        this.currentPhoto = null;
+        this.currentLocation = null;
+        this.locationText.textContent = '未获取位置';
+        this.photoPreviewContainer.classList.add('hidden');
+        this.photoPlaceholder.classList.remove('hidden');
+    }
+
+    updateCollectTime() {
+        const now = new Date();
+        this.collectTimeEl.textContent = now.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+    }
+
+    async startScanner() {
+        try {
+            if (!this.html5QrCode) {
+                this.html5QrCode = new Html5Qrcode('scanner');
+            }
+
+            this.scannerContainer.classList.remove('hidden');
+
+            const config = {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0
+            };
+
+            await this.html5QrCode.start(
+                { facingMode: 'environment' },
+                config,
+                (decodedText) => this.onScanSuccess(decodedText),
+                (errorMessage) => {}
+            );
+        } catch (error) {
+            console.error('Scanner error:', error);
+            uiManager.alert('无法启动摄像头，请确保已授权摄像头权限。您可以手动输入固定资产编码。', '扫码失败');
+        }
+    }
+
+    async stopScanner() {
+        if (this.html5QrCode) {
+            try {
+                await this.html5QrCode.stop();
+            } catch (e) {}
+            this.html5QrCode = null;
+        }
+        this.scannerContainer.classList.add('hidden');
+    }
+
+    onScanSuccess(decodedText) {
+        this.facodeInput.value = decodedText.trim();
+        this.stopScanner();
+        uiManager.alert(`扫码成功：${decodedText}`, '扫码成功');
+    }
+
+    handlePhotoSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.currentPhoto = e.target.result;
+            this.photoPreview.src = this.currentPhoto;
+            this.photoPreviewContainer.classList.remove('hidden');
+            this.photoPlaceholder.classList.add('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    removePhoto() {
+        this.currentPhoto = null;
+        this.photoInput.value = '';
+        this.photoPreviewContainer.classList.add('hidden');
+        this.photoPlaceholder.classList.remove('hidden');
+    }
+
+    getCurrentLocation() {
+        if (!navigator.geolocation) {
+            uiManager.alert('您的浏览器不支持地理定位', '获取位置失败');
+            return;
+        }
+
+        this.getLocationBtn.disabled = true;
+        this.getLocationBtn.innerHTML = `
+            <svg class="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            获取中...
+        `;
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                this.currentLocation = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy,
+                    address: null
+                };
+
+                const lat = position.coords.latitude.toFixed(6);
+                const lng = position.coords.longitude.toFixed(6);
+                const acc = Math.round(position.coords.accuracy);
+                this.locationText.innerHTML = `
+                    <span class="text-green-600 font-medium">位置已获取</span><br>
+                    <span class="text-gray-600 font-mono text-xs">纬度: ${lat}, 经度: ${lng}</span><br>
+                    <span class="text-gray-400 text-xs">精度: ±${acc}米</span>
+                `;
+
+                this.getLocationBtn.disabled = false;
+                this.getLocationBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    重新获取位置
+                `;
+            },
+            (error) => {
+                let message = '获取位置失败';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        message = '用户拒绝了位置请求';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        message = '位置信息不可用';
+                        break;
+                    case error.TIMEOUT:
+                        message = '获取位置超时';
+                        break;
+                }
+                uiManager.alert(message, '获取位置失败');
+
+                this.getLocationBtn.disabled = false;
+                this.getLocationBtn.innerHTML = `
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    获取当前位置
+                `;
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
+
+    async saveRecord() {
+        const facode = this.facodeInput.value.trim();
+
+        if (!facode) {
+            uiManager.alert('请输入或扫描固定资产编码', '缺少参数');
+            return;
+        }
+
+        try {
+            await this.cacheManager.addRecord({
+                facode: facode,
+                photo: this.currentPhoto,
+                location: this.currentLocation,
+                remark: this.remarkInput.value.trim()
+            });
+
+            uiManager.alert(`已保存离线采集记录：${facode}\n网络恢复后可批量提交查询`, '保存成功');
+            this.closeModal();
+        } catch (error) {
+            uiManager.alert('保存失败：' + error.message, '错误');
+        }
+    }
+}
+
 // ==================== UI 管理器 (模态框系统) ====================
 class UIManager {
     constructor() {
@@ -642,6 +1418,13 @@ class QueryManager {
         this.init();
     }
 
+    getBaseUrl(ip) {
+        if (ip.includes(':')) {
+            return `http://${ip}`;
+        }
+        return `http://${ip}:8080`;
+    }
+
     init() {
         if (this.form) {
             this.form.addEventListener('submit', (e) => {
@@ -662,7 +1445,8 @@ class QueryManager {
         const ip = document.getElementById('ipInput')?.value || 'localhost';
         const headers = connectionManager.getHeaders();
 
-        let curlCmd = `curl "http://${ip}:8080/api/query.php?facode=${facode}"`;
+        const baseUrl = this.getBaseUrl(ip);
+        let curlCmd = `curl "${baseUrl}/api/query.php?facode=${facode}"`;
         Object.entries(headers).forEach(([key, value]) => {
             if (value) curlCmd += ` \\\n  -H "${key}: ${value}"`;
         });
@@ -691,7 +1475,8 @@ class QueryManager {
 
         try {
             const headers = connectionManager.getHeaders();
-            const url = `http://${ip}:8080/api/query.php?facode=${encodeURIComponent(facode)}`;
+            const baseUrl = this.getBaseUrl(ip);
+            const url = `${baseUrl}/api/query.php?facode=${encodeURIComponent(facode)}`;
 
             const response = await fetch(url, { method: 'GET', headers: headers });
 
@@ -784,15 +1569,29 @@ let connectionManager;
 let historyManager;
 let queryManager;
 let uiManager;
+let networkMonitor;
+let offlineCacheManager;
+let offlineScanManager;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     uiManager = new UIManager();
+    networkMonitor = new NetworkMonitor();
     connectionManager = new ConnectionManager();
     historyManager = new HistoryManager();
     queryManager = new QueryManager();
+    offlineCacheManager = new OfflineCacheManager();
+    await offlineCacheManager.init();
+    offlineScanManager = new OfflineScanManager(offlineCacheManager);
+
+    // 网络状态变化时更新批量提交按钮状态
+    networkMonitor.onStatusChange(() => {
+        offlineCacheManager.render();
+    });
 
     // EXPOSE TO WINDOW for inline onclick handlers
     window.connectionManager = connectionManager;
     window.uiManager = uiManager;
     window.queryManager = queryManager;
+    window.offlineCacheManager = offlineCacheManager;
+    window.networkMonitor = networkMonitor;
 });

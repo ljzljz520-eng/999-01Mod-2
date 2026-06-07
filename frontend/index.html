@@ -53,17 +53,34 @@
             <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">固定资产编码查询</h1>
             <p class="mt-2 text-gray-500">输入服务器 IP 和固定资产编码快速查询对应的 SN</p>
           </div>
-          <button id="settingsBtn"
-            class="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            title="数据库连接管理">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
-              stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
+          <div class="flex items-center gap-3">
+            <!-- 网络状态指示器 -->
+            <div id="networkStatus" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-50 border border-green-200 transition-all duration-300">
+              <span id="networkStatusDot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              <span id="networkStatusText" class="text-xs font-bold text-green-700">在线</span>
+            </div>
+            <button id="offlineScanBtn"
+              class="text-gray-400 hover:text-orange-600 p-2 rounded-full hover:bg-orange-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 relative"
+              title="离线扫码采集">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              <span id="offlineBadge" class="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs font-bold rounded-full flex items-center justify-center hidden">0</span>
+            </button>
+            <button id="settingsBtn"
+              class="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              title="数据库连接管理">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- 查询表单 -->
@@ -75,7 +92,7 @@
               <div class="relative rounded-md shadow-sm">
                 <input type="text" id="ipInput"
                   class="block w-full px-4 py-3 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border transition-shadow"
-                  placeholder="例如: 192.168.1.100 或 localhost" value="localhost">
+                  placeholder="例如: 192.168.1.100 或 localhost" value="localhost:8082">
               </div>
             </div>
 
@@ -134,6 +151,45 @@
           </div>
           <div class="overflow-x-auto">
             <pre id="curlCommand" class="text-sm font-mono text-green-400 whitespace-pre-wrap break-all"></pre>
+          </div>
+        </div>
+
+        <!-- 离线缓存列表 -->
+        <div class="border-t border-gray-100 pt-8">
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-3">
+              <h2 class="text-lg font-bold text-gray-900">离线采集缓存</h2>
+              <span id="offlineCountBadge" class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">0 条待提交</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="batchSubmitBtn"
+                class="text-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center font-medium px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                批量提交
+              </button>
+              <button id="clearOfflineBtn"
+                class="text-sm text-gray-500 hover:text-red-600 transition-colors flex items-center font-medium">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                  </path>
+                </svg>
+                清空
+              </button>
+            </div>
+          </div>
+
+          <div id="offlineList" class="space-y-4">
+            <!-- 动态生成离线缓存记录 -->
+          </div>
+          <div id="emptyOffline" class="text-center py-10 bg-orange-50 rounded-lg border-2 border-dashed border-orange-200">
+            <svg class="w-12 h-12 mx-auto text-orange-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p class="text-orange-500 text-sm font-medium">暂无离线采集记录</p>
+            <p class="text-orange-400 text-xs mt-1">点击右上角扫码图标开始离线采集</p>
           </div>
         </div>
 
@@ -235,6 +291,144 @@
           class="inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">
           知道了
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 离线扫码采集模态框 -->
+  <div id="offlineScanModal" class="fixed inset-0 hidden z-50 flex items-center justify-center pointer-events-none p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl pointer-events-auto transform transition-all duration-300 max-h-[90vh] flex flex-col">
+      <!-- 模态框标题 -->
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-orange-50/50 rounded-t-xl">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+            <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">离线采集资产信息</h3>
+            <p class="text-xs text-gray-500">网络异常时先采集，恢复后统一提交</p>
+          </div>
+        </div>
+        <button id="closeOfflineScan"
+          class="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100 focus:outline-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 模态框内容 -->
+      <div class="modal-body p-6 overflow-y-auto">
+        <!-- 采集时间提示 -->
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+          <div class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p class="text-sm font-medium text-amber-800">离线采集提示</p>
+              <p class="text-xs text-amber-600 mt-1">系统将记录<span id="offlineCollectTime" class="font-bold">当前时间</span>作为采集时间，避免与实时查询混淆。</p>
+            </div>
+          </div>
+        </div>
+
+        <form id="offlineScanForm" class="space-y-5" novalidate>
+          <!-- 条码扫描区域 -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">固定资产编码 (扫码)</label>
+            <div class="space-y-3">
+              <div class="flex gap-2">
+                <input type="text" id="offlineFacode" placeholder="扫描条码或手动输入" 
+                  class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-shadow text-lg font-mono">
+                <button type="button" id="startScannerBtn" 
+                  class="px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition font-medium flex items-center gap-2">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  扫码
+                </button>
+              </div>
+              <!-- 扫码预览区域 -->
+              <div id="scannerContainer" class="hidden bg-black rounded-lg overflow-hidden">
+                <div id="scanner" class="w-full h-64"></div>
+                <button type="button" id="stopScannerBtn" 
+                  class="w-full py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 transition">
+                  关闭扫码
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 拍照区域 -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">资产照片</label>
+            <div class="space-y-3">
+              <div id="photoPreviewContainer" class="hidden">
+                <img id="photoPreview" class="w-full h-48 object-cover rounded-lg border border-gray-200" alt="照片预览">
+                <button type="button" id="removePhotoBtn" 
+                  class="mt-2 text-sm text-red-600 hover:text-red-700 flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  删除照片
+                </button>
+              </div>
+              <div id="photoPlaceholder" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-400 transition-colors cursor-pointer" onclick="document.getElementById('photoInput').click()">
+                <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+                <svg class="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <p class="text-sm text-gray-500">点击拍照或选择图片</p>
+                <p class="text-xs text-gray-400 mt-1">支持相机拍照或从相册选择</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 位置信息 -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">位置信息</label>
+            <div class="space-y-2">
+              <div id="locationDisplay" class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p class="text-sm text-gray-500" id="locationText">未获取位置</p>
+              </div>
+              <button type="button" id="getLocationBtn" 
+                class="w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                获取当前位置
+              </button>
+            </div>
+          </div>
+
+          <!-- 备注 -->
+          <div>
+            <label for="offlineRemark" class="block text-sm font-semibold text-gray-700 mb-2">备注信息</label>
+            <textarea id="offlineRemark" rows="3" placeholder="可选：填写资产状态、存放位置等备注信息"
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-shadow resize-none"></textarea>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="flex gap-3 pt-4 border-t border-gray-100">
+            <button type="button" id="cancelOfflineBtn" 
+              class="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium">
+              取消
+            </button>
+            <button type="button" id="saveOfflineBtn" 
+              class="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition font-bold shadow-sm flex items-center justify-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              保存到离线缓存
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
